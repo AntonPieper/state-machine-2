@@ -4,8 +4,7 @@ type KeyCode = keyof typeof Input.Keyboard.KeyCodes;
 type Pointer = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10;
 export type KeyMap = Record<string, {keys?: readonly KeyCode[], pointers?: readonly Pointer[]}>;
 
-export class InputManager<T extends KeyMap> {
-  private state: Record<string, boolean> = {};
+export class InputManager {
   constructor(gameObject: GameObjects.GameObject, keyMap: T) {
     for (const name in keyMap) {
       const { keys, pointers }= keyMap[name];
@@ -18,8 +17,8 @@ export class InputManager<T extends KeyMap> {
     }
   }
 
-  isDown(name: keyof T): boolean {
-    return this.state[name as string] ?? false;
+  isDown(name: string): boolean {
+    return this.state[name] ?? false;
   }
 
   private bindPointers(
