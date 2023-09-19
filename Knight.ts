@@ -1,60 +1,17 @@
-import { Animations, GameObjects, Scene } from "phaser";
-import { Player, PlayerState } from "./Player";
-import { HeroStrategy, SimpleIdle } from "./Hero";
-import { InputManager, KeyMap } from "./InputManager";
+import { Animations, Scene } from "phaser";
+import { MoveInput, Player, PlayerState } from "./Player";
+import { HeroStrategy } from "./Hero";
+import { createAnimations } from "./Animation";
 
-export type Transformer<T> = (original: T) => T;
-
-export type AnimationConfig =  {
-  start: number,
-  end: number,
-  repeat: number,
-  frameRate: number
-};
-
-export type CreateAnimationsConfig = {
-  texture: string,
-  animations: Record<string | number, AnimationConfig>,
-  key?: Transformer<string>,
-  prefix?: Transformer<string>,
-  suffix?: string
-};
-
-export function createAnimations(
-  scene: Scene,
-  {
-    texture, key = (s) => s, prefix = (s) => s, suffix = ".png", animations
-  }: CreateAnimationsConfig
-): void {
-  for (const animName in animations) { 
-    scene.anims.create({
-      key: key(animName),
-      frames: scene.anims.generateFrameNames(texture, {
-        start: animations[animName].start,
-        end: animations[animName].end,
-        prefix: prefix(Anims.Idle), suffix,
-      }),
-      repeat: animations[animName].repeat,
-      frameRate: animations[animName].frameRate
-    });
-  }
-}
-
-enum Anims {
+const enum Anims {
   Idle = "idle",
   Walk = "walk",
   Attack = "attack"
 }
-const InputMap = {
-      up: { keys: ["W", "UP"] },
-      down: { keys: ["S", "DOWN"] },
-      left: { keys: ["A", "LEFT"] },
-      right: { keys: ["D", "RIGHT"] }
-} as const satisfies KeyMap;
 
-export default class Knight implements HeroStrategy {
-  private inputs!: InputManager<typeof InputMap>;
-  init(scene: Scene): void {
+export class Knight implements HeroStrategy {
+  init(scene: Scene): string {
+    // Create knight animations with helper
     createAnimations(scene, {
       texture: Knight.texture,
       key: Knight.key,
@@ -65,31 +22,59 @@ export default class Knight implements HeroStrategy {
         [Anims.Attack]: { start: 1, end: 6, repeat: 0, frameRate: 15 }
       }
     });
+    return Knight.texture;
   }
 
   initialState(context: Player): PlayerState {
-    this.inputs = new InputManager(context.sprite, InputMap);
-    return new Idle(context, this.inputs);
+    return new Movement(context);
   }
 
   static animation(name: Anims) {
     return Knight.key(name);
   }
 
-  private static readonly texture = "knight";
+  static readonly texture = "knight";
 
+  /** Get animation name */
   private static key(name: string) {
     return `${Knight.texture}-${name}`;
   }
 
+  /** Get animation name prefix */
   private static prefix(name: string) {
     return `${name}-`;
   }
 }
 
-export class Idle extends SimpleIdle {
-  constructor(context: Player, private inputs: Knight["inputs"]) {
-    super(context, Knight.animation(Anims.Idle), (ctx) => new SwordAttack(ctx));
+// Knight States
+
+/**
+ * Movement state handles idle and walking. 
+ * A click will transition to the {@link SwordAttack} state.
+ **/
+export class Movement extends PlayerState {
+  constructor(context: Player) {
+    super(context);
+  }
+
+  onEnter(): void {
+      this.context.play(Knight.animation(Anims.Idle));
+  }
+
+  onMove(input: MoveInput): void {
+    const velocity = this.context.body!.velocity;
+    velocity.x = input.x;
+    velocity.y = input.y;
+    const speedSq = velocity.x * velocity.x + velocity.y * velocity.y;
+    if (speedSq > 0.1) {
+      this.context.play(Knight.animation(Anims.Walk), true);
+    } else {
+      this.context.play(Knight.animation(Anims.Idle), true);
+    }
+  }
+
+  onPointerDown(): void {
+    this.context.transition(new SwordAttack(this.context));
   }
 }
 
@@ -99,11 +84,11 @@ export class SwordAttack extends PlayerState {
   }
 
   onEnter(): void {
-    this.context.sprite.play({
-      key: "sword_attack"
-    });
-    this.context.sprite.once(Animations.Events.ANIMATION_COMPLETE, () => {
-      this.context.setState(new SwordAttack(this.context));
+    const velocity = this.context.body!.velocity;
+    velocity.x = velocity.y = 0; // Stop movement
+    this.context.play(Knight.animation(Anims.Attack));
+    this.context.once(Animations.Events.ANIMATION_COMPLETE, () => {
+      this.context.transition(new Movement(this.context));
     });
   }
 }
